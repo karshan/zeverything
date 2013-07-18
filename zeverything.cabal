@@ -1,0 +1,16 @@
+Name:                 zeverything
+Version:              1.0
+Build-type:           Custom
+Synopsis:             Library to validate generic datastructures
+Description:          Validate generic datastructures using zippers
+Author:               Bessai, Jan
+Maintainer:           Bessai, Jan
+Build-Depends:        base
+Cabal-version:        >= 1.2
+extra-source-files:   Data/Generics/Tests/Tests.hs ValidationTest.hs Forum.hs
+
+Library
+  Hs-Source-Dirs:  src
+  Exposed-Modules: Data.Generics.Validation
+  Build-Depends:   base > 4 && < 5, syb, syz, transformers
+
