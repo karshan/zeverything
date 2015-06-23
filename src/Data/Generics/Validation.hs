@@ -2,7 +2,7 @@
 
 module Data.Generics.Validation
   (
-  -- * Types 
+  -- * Types
     TaskList
   , Task (..)
   , Visit
@@ -13,6 +13,7 @@ module Data.Generics.Validation
   -- * Basic Visit and Collect functions
   , preorder
   , breadthfirst
+  , nonstop
   , collectList
   ) where
 
@@ -26,23 +27,23 @@ import Data.Generics.Zipper
 
 -- Types
 
--- | A list of tasks running in a functor of type @f@ on zippers with root type 
+-- | A list of tasks running in a functor of type @f@ on zippers with root type
 -- @r@ producing results typed @a@.
 type TaskList f r a = [Task f r a]
 
 -- | A single traversal Task.
 data Task f r a = Task
   { getZipper :: Zipper r -- ^ Current position
-  , getFunction :: Visit f r a -- ^ Function to apply to @zipper@ 
+  , getFunction :: Visit f r a -- ^ Function to apply to @zipper@
   }
-  
+
 -- | Function to visit a zipper and complete a single task.
 type Visit f r a = Zipper r -- ^ The zipper to visit
   -> TaskList f r a -- ^ List of remaining tasks
   -> f (a, TaskList f r a) -- ^ Result and updated list of remaining tasks
 
 -- | Function to collect results.
-type Collect f a c = 
+type Collect f a c =
   Compose Maybe (Compose f ((,) a)) c  -- ^ Result and collection in previous state or nothing
   -> c -- ^ updated or initialized collection
 
@@ -63,7 +64,7 @@ zeverything cf tf z =
 runTask :: (Functor f, Data r) =>
   TaskList f r a -- ^ Available tasks
   -> Compose Maybe (Compose f ((,) a)) (TaskList f r a) -- ^ Result and new list of tasks
-runTask ts = 
+runTask ts =
   case ts of
     [] -> Compose Nothing
     ((Task z f):ts') -> Compose . Just . Compose $ f z ts'
@@ -74,16 +75,29 @@ runTask ts =
 -- Stop descending the current path if the supplied query is successful.
 -- Attach the current position to the query result.
 -- Can use any applicative functor @f@.
-preorder :: (Applicative f, Data r) => 
+preorder :: (Applicative f, Data r) =>
   GenericQ (Maybe a) -- ^ Query to be applied
   -> Visit f r (Maybe (a, Zipper r)) -- ^ Step result
 preorder q z zs = pure $
   case query q z of
-    Nothing -> 
+    Nothing ->
       (Nothing, maybeCons (down' z) (preorder q) . maybeCons (right z) (preorder q) $ zs)
     (Just res) -> (Just (res, z), maybeCons (right z) (preorder q) zs)
   where
-    maybeCons z f l = case z of 
+    maybeCons z f l = case z of
+      (Just x) -> (Task x f) : l
+      Nothing -> l
+
+nonstop :: (Applicative f, Data r) =>
+  GenericQ (Maybe a) -- ^ Query to be applied
+  -> Visit f r (Maybe (a, Zipper r)) -- ^ Step result
+nonstop q z zs = pure $
+  case query q z of
+    Nothing ->
+      (Nothing, maybeCons (down' z) (nonstop q) . maybeCons (right z) (nonstop q) $ zs)
+    (Just res) -> (Just (res, z), maybeCons (down' z) (nonstop q) . maybeCons (right z) (nonstop q) $ zs)
+  where
+    maybeCons z f l = case z of
       (Just x) -> (Task x f) : l
       Nothing -> l
 
@@ -91,12 +105,12 @@ preorder q z zs = pure $
 -- Stop descending the current path if the supplied query is successful.
 -- Attach the current position to the query result.
 -- Can use any applicative functor @f@.
-breadthfirst :: (Applicative f, Data a) => 
+breadthfirst :: (Applicative f, Data a) =>
   GenericQ (Maybe r) -- ^ Query to be applied
   -> Visit f a (Maybe (r, Zipper a)) -- ^ Step result
 breadthfirst q z zs = pure $
   case query q z of
-    Nothing -> 
+    Nothing ->
       (Nothing, maybeAppend (down' z) (breadthfirst q) . maybeAppend (right z) (breadthfirst q) $ zs)
     (Just res) -> (Just (res, z), maybeAppend (right z) (breadthfirst q) zs)
   where
@@ -109,7 +123,7 @@ breadthfirst q z zs = pure $
 collectList :: Collect Identity (Maybe a) [a]
 collectList s = case getCompose s of
   Nothing -> []
-  (Just x) -> 
+  (Just x) ->
     case (runIdentity . getCompose) x of
       (Just res, rs) -> (res:rs)
       (Nothing, rs) -> rs
